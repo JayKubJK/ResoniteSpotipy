@@ -1,6 +1,6 @@
 # Resonite Spotipy
 A websocket server for talking with the Spotify API with a Resonite websocket client item to compliment it
-![image](https://github.com/user-attachments/assets/f263a945-876e-4da0-99bf-5a9c4d6330b3)
+![image](https://github.com/user-attachments/assets/77ffd3cb-40c4-4e48-99d1-e778760c18f3)
 
 Here's the Resonite record link for the Resonite Spotipy audio player:
 `resrec:///U-JayKub/R-CAF0B1B9598EF23797BE641C09DBBD3905EA75224EBD0F7F08F2AD4B61579001`
