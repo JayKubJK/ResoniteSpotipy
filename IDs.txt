@@ -1,0 +1,10 @@
+# You'll find your Client ID and Client Secret in your Spotify application developer panel under Settings.
+Client ID: <insert client ID here>
+Client Secret: <insert secret ID here>
+
+# Under the same settings menu you'll find a "Redirect" section, which lets you hook up a link for the API to redirect you to once it's connected
+Redirect URI: <insert redirect URL here>
+
+# The port ID allows you to choose what port this websocket will connect through
+# You MUST have the same port ID hooked up in Resonite as you put in here!
+Port ID: <insert port here>
