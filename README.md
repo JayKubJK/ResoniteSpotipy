@@ -19,8 +19,8 @@ You'll need these Python packages: *websockets*, *asyncio*, *spotipy*. You'll al
 
 ## How to setup the websocket server
 - Download the ZIP package in the files and unzip it
-- In the IDs.txt file, paste in your Spotify application's Client ID and Secret ID. Also put in a port ID you'll be using for Resonite
-- Run the Python file in a terminal with `./ResoniteSpotipy.py`
+- In the IDs.txt file, paste in your Spotify application's Client ID, Secret ID, and a Redirect link you're using for your application. Also put in a port ID you'll be using for Resonite
+- Run the Python file in a terminal with `./ResoniteSpotipy.py` or run it through an IDE like VSCode
 
 ## How to setup the Resonite websocket client
 - Spawn out the item from the folder
