@@ -21,7 +21,7 @@ def read_data():
         lines: list[str] = file.readlines()
     
     for i in range(0, 4):
-        results[i] = lines[indices[i]].split(" ")[2].removesuffix("\n")
+        results[i] = lines[indices[i]].split(" ")[2].removesuffix("\n").replace("<", "").replace(">", "")
         i += 1
     
     results[3] = int(results[3])
@@ -75,6 +75,7 @@ def get_song_data(song_data, type: str):
         
         track_name: str = info['name']
         album_name: str = info['album']['name']
+        uri: str        = info['uri'] if type != "current" else info["external_urls"]["spotify"]
         
         try:
             album_cover: str = info['album']['images'][0]['url']
@@ -85,7 +86,8 @@ def get_song_data(song_data, type: str):
                         artists + "\t" +
                         track_name + "\t" +
                         album_name + "\t" +
-                        album_cover)
+                        album_cover + "\t" +
+                        uri)
     except:
         payload: str = "[ERROR] Error getting song data"
     
@@ -133,7 +135,11 @@ def get_song_results(result, type: str, keyword = "items"):
         try:
             icon: str = item['album']['images'][0]['url']
         except:
-            icon: str = "https://developer.spotify.com/images/guidelines/design/icon3@2x.png"
+            try:
+                icon: str = item['images'][0]['url']
+                name = f"<u>{name}</u>"
+            except:
+                icon: str = "https://developer.spotify.com/images/guidelines/design/icon3@2x.png"
         
         payload += ("\t" + name + "\t" + artists + "\t" + uri + "\t" + icon + "\n")
     
@@ -259,9 +265,16 @@ async def socket(websocket: websockets.WebSocketClientProtocol):
                 await websocket.send(get_playlists())
             
             elif (received == "search"):
-                if (data != ""):
-                    SEARCH_MENU = "search"
-                    await websocket.send(get_song_results(sp.search(data, market="US")["tracks"], type="search"))
+                SEARCH_MENU = "search"
+                search_data: list[str] = data.removesuffix(" ").split(" ")
+                if (len(search_data) > 1):
+                    search_results = sp.search(" ".join(search_data[1:]), type=search_data[0], market="US") # Valid arguments for type: "track", "album", "album,track"
+                    if (search_data[0] == "album,track" or search_data[0] == "track,album"):
+                        tracks = search_results["tracks"]
+                        albums = search_results["albums"]
+                        await websocket.send(get_song_results(tracks, type="search") + get_song_results(albums, type="search"))
+                    else:
+                        await websocket.send(get_song_results(search_results[f"{search_data[0]}s"], type="search"))
                 
             elif (received == "queue"):
                 try:
@@ -273,11 +286,14 @@ async def socket(websocket: websockets.WebSocketClientProtocol):
                     await websocket.send("[ERROR] No queue found")
             
             elif (received == "play" and data != None):
+                play_data: list[str] = data.split(" ")
                 try:
-                    if (SEARCH_MENU == "search"):
+                    if (SEARCH_MENU == "search" and play_data[0] == "track"):
                         sp.start_playback(uris=[data]) # Plays just the searched song
                     elif (SEARCH_MENU == "playlists"):
                         sp.start_playback(context_uri=data) # Plays the playlist clicked on
+                    elif (play_data[0] == "album"):
+                        sp.start_playback(context_uri=" ".join(play_data[1:])) # Plays the album clicked on
                     else:
                         sp.start_playback(context_uri=sp.currently_playing()["context"]["uri"], offset={"uri": data}) # Plays song in the queue that was clicked on
                 except:
