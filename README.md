@@ -20,9 +20,20 @@ You'll need these Python packages: *websockets*, *asyncio*, *spotipy*. You'll al
 ## How to setup the websocket server
 - Download the ZIP package in the files and unzip it
 - In the IDs.txt file, paste in your Spotify application's Client ID, Secret ID, and a Redirect link you're using for your application. Also put in the callback link as the redirect URI and the port ID you'll be using for Resonite
+    - The port ID should *not* be the same ID as the ID you use for the callback link (if you use http://locahost:8000/callback as your link, don't use port 8000 for the websocket)
 - Run the Python file in a terminal with `.\ResoniteSpotipy.py` or `py ResoniteSpotipy.py`, or run it through an IDE like VSCode
 
 ## How to setup the Resonite websocket client
 - Spawn out the item from the folder
 - Click on the Spotify tab to link up the player to the websocket server
     - Make sure you supply the same port ID as the one you're using for the websocket server!
+
+## Future additions
+| Working On | Progress | Version |
+| ---------- | -------- | ------- |
+| Displaying album tracks & playing a specific album track | ✔️ Completed | v1.1 |
+| Displaying playlist tracks & playing a specific playlist track | ✔️ Completed | v1.1 |
+| Player for only displaying currently playing song | 💻 In progress | v1.1 |
+| Searching artists & displaying artist profile | 📝 Planned | v1.2 |
+| Song queueing system on the player | 📝 Planned | v1.2 |
+| UI overhaul for the player | 📝 Planned | v??? |
