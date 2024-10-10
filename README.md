@@ -1,6 +1,6 @@
 # Resonite Spotipy
 A websocket server for talking with the Spotify API with a Resonite websocket client item to compliment it
-![image](https://github.com/user-attachments/assets/77ffd3cb-40c4-4e48-99d1-e778760c18f3)
+![image](https://github.com/user-attachments/assets/c84f2740-fa20-42f3-b742-576ba355cb33)
 
 Here's the Resonite record link for the Resonite Spotipy audio player:
 `resrec:///U-JayKub/R-CAF0B1B9598EF23797BE641C09DBBD3905EA75224EBD0F7F08F2AD4B61579001`
@@ -33,7 +33,7 @@ You'll need these Python packages: *websockets*, *asyncio*, *spotipy*. You'll al
 | ---------- | -------- | ------- |
 | Displaying album tracks & playing a specific album track | ✔️ Completed | v1.1 |
 | Displaying playlist tracks & playing a specific playlist track | ✔️ Completed | v1.1 |
-| Player for only displaying currently playing song | 💻 In progress | v1.1 |
+| Player for only displaying currently playing song | ✔️ Completed | v1.1 |
 | Searching artists & displaying artist profile | 📝 Planned | v1.2 |
 | Song queueing system on the player | 📝 Planned | v1.2 |
 | UI overhaul for the player | 📝 Planned | v??? |
