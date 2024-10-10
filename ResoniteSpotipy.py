@@ -1,19 +1,281 @@
-import asyncio
-import websockets
-import spotipy
+import asyncio as aio
+import websockets as ws
+import spotipy as sp
+
+from APIClient import APIClient # The class that handles the Spotify API and custom functions
 
 from datetime import datetime
-from spotipy.oauth2 import SpotifyOAuth
-
 def current_time():
     return f"{datetime.now():%d.%m.%y (%H:%M:%S)}"
 
-#---------------------------------
-# Spotify API initialization code
-#---------------------------------
+import argparse as arg
+parser = arg.ArgumentParser(description="The websocket server for the Resonite Spotipy project")
+parser.add_argument("-d", "--debug", dest="debug", action="store_true", help="Prints debug messages", default=False)
+args = parser.parse_args()
+
+DEBUG: bool = args.debug # A variable for the program to know if it should print debug messages into the console
+
+#--------------------------------------------------------------
+
+DISPLAY: str = "" # A variable for the websocket to know what is displayed in the Spotify menu
+
+# Displays current information about the currently playing track and/or the playback states
+def display_current_info(received: str) -> str:
+    payload: str = ""
+    
+    match (received):
+        case "current_info": # Used for getting the currently playing track and the playback states
+            try:
+                _ = API.current_user_playing_track()['item'] # Throws an error if there's no currently playing track
+                
+                payload = CLIENT.get_track_data(API.current_user_playing_track(), ws_call="current") + "\n" + CLIENT.get_playback_states()
+            except:
+                payload = "[ERROR] No current song active"
+        
+        case "current_track":
+            try:
+                _ = API.current_user_playing_track()['item'] # Throws an error if there's no currently playing track
+                
+                payload = CLIENT.get_track_data(API.current_user_playing_track(), ws_call="current")
+            except:
+                payload = "[ERROR] No current song active"
+        
+        case "current_states":
+            try:
+                payload = CLIENT.get_playback_states()
+            except:
+                payload = "[ERROR] Error getting playback states"
+    
+    return payload
+
+# Modifies the currently playing track, like going to the next or previous song, or playing a new song
+def modify_current_track(received: str, data: str) -> str:
+    payload: str = ""
+    
+    match (received):
+        case "next":
+            try:
+                CLIENT.run_action(API.next_track)
+                
+                payload = "[NEXT SONG]"
+            except:
+                payload = "[ERROR] Error going to next song"
+        
+        case "previous":
+            try:
+                if (API.current_playback()["progress_ms"] > 4000):
+                    CLIENT.run_action(API.seek_track, 0)
+                else:
+                    CLIENT.run_action(API.previous_track)
+                
+                payload = "[PREVIOUS SONG]"
+            except:
+                payload = "[ERROR] Error going to previous song"
+        
+        case "play":
+            if (data != None):
+                # Format for searching: "<track | album | track,album> <uri>"
+                # Format for playing from playlist or album: "<uri> <offset uri>"
+                # Format for playing from queue: "<offset uri>"
+                play_data: list[str] = data.split(" ")
+                try:
+                    match (DISPLAY):
+                        case "search":
+                            if (play_data[0] == "track"):
+                                API.start_playback(uris=[play_data[1]]) # Plays just the selected song
+                                payload = "[PLAY] Played selected searched song"
+                        
+                        case "queue":
+                            API.start_playback(context_uri=API.currently_playing()["context"]["uri"], offset={"uri": play_data[1]}) # Plays song in the queue that was clicked on
+                            payload = "[PLAY] Played selected song in queue"
+                        
+                        case "playlist" | "album":
+                            if (len(play_data) == 3):
+                                API.start_playback(context_uri=play_data[1], offset={"uri": play_data[2]}) # Plays song in the playlist/album that was clicked on
+                                payload = "[PLAY] Played selected song in playlist/album"
+                            else:
+                                API.start_playback(context_uri=play_data[1]) # Plays the playlist/album that was clicked on
+                                payload = "[PLAY] Played selected playlist/album"
+                        
+                except:
+                    payload = "[ERROR] Error playing song"
+
+    return payload
+
+# Modifies the playback states, like pausing, resuming, or changing the shuffle state
+def modify_playback_states(received: str) -> str:
+    payload: str = ""
+    
+    if (received == "pause" or received == "resume"):
+        try:
+            _ = API.current_user_playing_track()['is_playing']
+        except:
+            _ = False
+        
+        playing = "False" if _ else "True"
+        
+        try:
+            CLIENT.run_action(API.pause_playback) if _ else CLIENT.run_action(API.start_playback)
+            
+            payload = CLIENT.get_playback_states(playing=playing)
+        except:
+            payload = "[ERROR] Error pausing/resuming playback"
+             
+    match (received):       
+        case "shuffle":
+            try:
+                shuffle: bool = API.current_playback()["shuffle_state"]
+                CLIENT.run_action(API.shuffle, not shuffle) # Throws an error if it can't change the shuffle state
+                
+                payload = CLIENT.get_playback_states(shuffle=str(not shuffle))
+            except:
+                payload = "[ERROR] Error changing shuffle state"
+        
+        case "repeat":
+            try:
+                states: list[str] = ["track", "context", "off"]
+                repeat: str       = API.current_playback()["repeat_state"]
+                change: str       = states[(states.index(repeat) + 1) if (repeat != "off") else 0]
+                CLIENT.run_action(API.repeat, change) # Throws an error if it can't change the repeat state
+
+                payload = CLIENT.get_playback_states(repeat=change.capitalize())
+            except:
+                payload = "[ERROR] Error changing repeat state"
+    
+    return payload
+
+# Lists results stuff, such as playlists, currently playing queue, or search results
+def list_stuff(received: str, data: str) -> str:
+    global DISPLAY
+    payload: str = ""
+    
+    match (received):
+        case "list_playlists":
+            DISPLAY = "playlists"
+            payload = CLIENT.get_playlists()
+
+        case "search":
+            try:
+                DISPLAY = "search"
+                search_data: list[str] = data.split(" ") # Format: "<type> <search query>"
+                
+                if (len(search_data) > 1):
+                    search_results = API.search(" ".join(search_data[1:]), type=search_data[0], market="US") # Valid arguments for type: "track", "album", "track,album"
+                    
+                    if (search_data[0] == "album,track" or search_data[0] == "track,album"):
+                        tracks = search_results["tracks"]
+                        albums = search_results["albums"]
+                        payload = CLIENT.get_results(tracks, ws_call="search") + CLIENT.get_results(albums, ws_call="search")
+                    else:
+                        payload = CLIENT.get_results(search_results[f"{search_data[0]}s"], ws_call="search")
+            except:
+                payload = "[ERROR] Error searching"
+            
+        case "list_queue":
+            try:
+                _ = API.queue()["queue"][0] # Throws an error if there's no queue available
+                
+                DISPLAY = "queue"
+                payload = CLIENT.get_results(API.queue(), ws_call="queue", keyword="queue")
+            except:
+                payload = "[ERROR] No queue found"
+    
+    return payload
+
+# Displays tracks in an album or playlist
+def display_tracks(received: str, data: str) -> str:
+    global DISPLAY
+    payload: str = ""
+    
+    match (received):
+        case "display_album":
+            # Data format: <album uri>
+            try:
+                DISPLAY = "album"
+                _ = API.album_tracks(data)["items"][0] # Throws an error if there are no tracks in the album
+            
+                payload = CLIENT.display_album(API.album(data))
+            except:
+                payload = "[ERROR] Error loading album tracks"
+
+        case "display_playlist":
+            # Data format: <playlist uri> <offset>
+            DISPLAY = "playlist"
+            spl = data.split(" ")
+            try:
+                if ("collection" in spl[0]):
+                    _ = API.current_user_saved_tracks()["items"][0] # Throws an error if there are no tracks in their Liked Songs
+                    
+                    payload = CLIENT.display_playlist(API.current_user_saved_tracks(), offset=int(spl[1]), uri=spl[0])
+                else:
+                    _ = API.playlist(playlist_id=spl[0])["tracks"]["items"] # Throws an error if there are no tracks in the playlist
+                
+                    payload = CLIENT.display_playlist(API.playlist(playlist_id=spl[0]), offset=int(spl[1]))
+            except:
+                payload = "[ERROR] Error loading playlist tracks"
+    
+    return payload
+
+async def socket(websocket: ws.WebSocketClientProtocol):
+    global DISPLAY
+    
+    # Initializing the websocket
+    ID = str(websocket.id)
+    print(f"{current_time()} Client {ID[:8]} connected!")
+    
+    await websocket.send(CLIENT.get_playback_states())
+    
+    try:
+        async for message in websocket:
+            # Message format: "command" "extra data"
+            parsed: list[str] = message.removesuffix(" ").split(" ")
+            received: str     = ""
+            data: str | None  = None
+            
+            if (len(parsed) < 2):
+                received = message
+                print(f"[{ID[:8]}] {current_time()} Command received: {received}")
+            else:
+                received = parsed[0]
+                data     = " ".join(parsed[1:])
+                print(f"[{ID[:8]}] {current_time()} Command received: {received} | {data}")
+
+            payload: str = ""
+            
+            if (received in ["current_info", "current_song", "current_states"]):
+                payload = display_current_info(received)
+                
+            elif (received in ["next", "previous", "play"]):
+                payload = modify_current_track(received, data)
+
+            elif (received in ["pause", "resume", "shuffle", "repeat"]):
+                payload = modify_playback_states(received)
+                
+            elif (received in ["list_playlists", "search", "list_queue"]):
+                payload = list_stuff(received, data)
+            
+            elif (received in ["display_album", "display_playlist"]):
+                payload = display_tracks(received, data)
+            
+            else:
+                payload = "[ERROR] Unknown command"
+        
+            print(f"[{ID[:8]}] {current_time()} Response sent: {payload}") if DEBUG and payload != "" else None
+            await websocket.send(payload)
+            
+    except:
+        print(current_time(), "Connection error with client.")
+        
+#--------------------------------------------------------------
+
+API: sp.Spotify = None
+CLIENT: APIClient = None
+PORT: int = 0000
 
 # Reads data from the IDs.txt file and parses them to be used in the API
-def read_data():
+def connect_to_spotify():
+    global API, CLIENT, PORT
+    
     results: list[str | int] = ["", "", "", 0]
     indices: list[int]       = [1, 2, 5, 9]
     
@@ -23,292 +285,28 @@ def read_data():
     for i in range(0, 4):
         results[i] = lines[indices[i]].split(" ")[2].removesuffix("\n").replace("<", "").replace(">", "")
         i += 1
+    PORT = int(results[3])
     
-    results[3] = int(results[3])
-    return results
-
-[CLIENT_ID, CLIENT_SECRET, REDIRECT_URL, PORT] = read_data()
-print(read_data())
-SCOPE = "user-library-modify,user-library-read,user-read-currently-playing,user-read-playback-position,user-read-playback-state,user-modify-playback-state,app-remote-control,streaming,playlist-read-private,playlist-modify-private,playlist-modify-public,playlist-read-collaborative"
-
-sp: spotipy.Spotify = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id=CLIENT_ID, client_secret=CLIENT_SECRET, redirect_uri=REDIRECT_URL, scope=SCOPE))
-
-print(current_time(), "Connected to Spotify")
-
-#--------------------------------------------------------------
-
-SEARCH_MENU = ""
-DEVICE = ""
-
-# Finds the active playback device
-def find_device():
-    global DEVICE
+    if (str(results[3]) in results[2]):
+        raise Exception(f"Invalid port! ({PORT = }). Use a different port than the one used by the callback URI.")
     
-    if (not sp.devices()['devices']):
-        print("[ERROR] No devices found")
-        raise Exception("No devices found")
-    else:
-        DEVICE = sp.devices()['devices'][0]['id']
-        print(f"Active device: {DEVICE}")
-
-# Attempts to run the given action with the given arguments and if it can't, it will attempt to run it with the stored device ID
-def run_action(action: callable, *args):
-    find_device()
+    print(results) if DEBUG else None
     
-    try:
-        action(*args, DEVICE) if args else action(device_id = DEVICE)
-    except:
-        print("[ERROR] Device not found")
-
-# Parses song data from the dictionary of information
-def get_song_data(song_data, type: str):
-    data: str  = ""
-    info: dict = song_data['item']
+    _ = """user-library-modify,user-library-read,user-read-currently-playing,user-read-playback-position,
+            user-read-playback-state,user-modify-playback-state,app-remote-control,streaming,playlist-read-private,
+            playlist-modify-private,playlist-modify-public,playlist-read-collaborative"""
+    CLIENT = APIClient(results[0], results[1], results[2], _)
+    API = CLIENT._api
+    CLIENT._debug = DEBUG
     
-    try:    
-        header: str = f"[{type.capitalize()}]"
-        
-        for idx, artist in enumerate(info['artists']):
-            data += artist['name']
-            data += ", " if (idx + 1 != len(info['artists'])) else ""
-        artists: str = data
-        
-        track_name: str = info['name']
-        album_name: str = info['album']['name']
-        uri: str        = info['uri'] if type != "current" else info["external_urls"]["spotify"]
-        
-        try:
-            album_cover: str = info['album']['images'][0]['url']
-        except IndexError:
-            album_cover: str = "https://developer.spotify.com/images/guidelines/design/icon3@2x.png"
-        
-        payload: str = (header + "\t" +
-                        artists + "\t" +
-                        track_name + "\t" +
-                        album_name + "\t" +
-                        album_cover + "\t" +
-                        uri)
-    except:
-        payload: str = "[ERROR] Error getting song data"
-    
-    return payload
-
-# Parses shuffle, repeat, and playing information from the current player
-def get_playback_states(shuffle = "read", playback = "read", playing = "read"):
-    payload: str = "[INIT]\t"
-    result: str  = sp.current_playback()
-    
-    if (result == None):
-        return "[ERROR] No playback active"
-    
-    try:
-        shuffle_state: bool = result["shuffle_state"]
-    except: # This only runs if the shuffle state is the Smart Shuffle
-        shuffle_state: bool = True
-    finally:
-        payload += (str(shuffle_state) + "\t") if (shuffle == "read") else shuffle + "\t"
-    
-    repeat_state: str = result["repeat_state"]
-    payload += (repeat_state.capitalize() + "\t") if (playback == "read") else playback + "\t"
-    
-    is_playing: bool = result["is_playing"]
-    payload += str(is_playing) if (playing == "read") else playing
-    
-    return payload
-
-# Parses the search/queue results found
-def get_song_results(result, type: str, keyword = "items"):
-    data: str    = ""
-    payload: str = f"[{type.upper()}]"
-    
-    for i in range(len(result[keyword])):
-        item: dict = result[keyword][i]
-        data = ""
-        for idx, artist in enumerate(item['artists']):
-            data += artist['name']
-            data += ", " if (idx + 1 != len(item['artists'])) else ""
-        artists: str = data
-        
-        name: str = item['name']
-        uri: str  = item['uri']
-        
-        try:
-            icon: str = item['album']['images'][0]['url']
-        except:
-            try:
-                icon: str = item['images'][0]['url']
-                name = f"<u>{name}</u>"
-            except:
-                icon: str = "https://developer.spotify.com/images/guidelines/design/icon3@2x.png"
-        
-        payload += ("\t" + name + "\t" + artists + "\t" + uri + "\t" + icon + "\n")
-    
-    return payload
-
-# Parses the user's playlists, including the user's Liked Songs
-def get_playlists():
-    result: str  = sp.current_user_saved_tracks()
-    payload: str = ("[PLAYLISTS]\t" + "Liked Songs" + "\t" + f"{str(result['total'])} Songs" + "\t"
-                    + f"{sp.current_user()['uri']}:collection" + "\t" + "https://developer.spotify.com/images/guidelines/design/icon3@2x.png" + "\n")
-    
-    result = sp.current_user_playlists()
-    
-    for i in range(len(result["items"])):
-        item: dict = result['items'][i]
-        
-        name: str  = item['name']
-        count: str = item['tracks']['total']
-        uri: str   = item['uri']
-        
-        try:
-            icon: str = item['images'][0]['url']
-        except:
-            icon: str = "https://developer.spotify.com/images/guidelines/design/icon3@2x.png"
-
-        payload += "\t" + name + "\t" + f"{str(count)} Songs" + "\t" + uri + "\t" + icon + "\n"
-    
-    return payload
-
-async def socket(websocket: websockets.WebSocketClientProtocol):
-    # Initializing the websocket
-    global SEARCH_MENU
-    
-    ID = str(websocket.id)
-    print(f"{current_time()} Client {ID[:8]} connected!")
-    find_device()
-    
-    await websocket.send(get_playback_states())
-    
-    try:
-        async for message in websocket:
-            # Message format: "command" "search results"
-            parsed: list[str] = message.split(" ")
-            received: str     = parsed[0]
-            data: str | None  = " ".join(parsed[1:]) if len(parsed) > 1 else None
-            if (data):
-                print(f"[{ID[:8]}] {current_time()} Command received: {received} | {data}")
-            else:
-                received = message
-                print(f"[{ID[:8]}] {current_time()} Command received: {received}")
-            
-            if (received == "current"):
-                try:
-                    _ = sp.current_user_playing_track()['item'] # Throws an error if there's no currently playing track
-                    
-                    await websocket.send(get_song_data(sp.current_user_playing_track(), type="current") + "\n" + get_playback_states())
-                except:
-                    await websocket.send("[ERROR] No current song active")
-                    
-            elif (received == "states"):
-                try:
-                    await websocket.send(get_playback_states())
-                except:
-                    await websocket.send("[ERROR] Error getting playback states")
-                    
-            elif (received == "next"):
-                try:
-                    run_action(sp.next_track)
-                    
-                    await websocket.send("[NEXT SONG]")
-                except:
-                    await websocket.send("[ERROR] Error going to next song")
-            
-            elif (received == "previous"):
-                try:
-                    if (sp.current_playback()["progress_ms"] > 4000):
-                        run_action(sp.seek_track, 0)
-                    else:
-                        run_action(sp.previous_track)
-                    
-                    await websocket.send("[PREVIOUS SONG]")
-                except:
-                    await websocket.send("[ERROR] Error going to previous song")
-            
-            elif (received == "pause"):
-                try:
-                    run_action(sp.pause_playback)
-                    
-                    await websocket.send(get_playback_states(playing="False"))
-                except:
-                    await websocket.send("[ERROR] Error pausing playback")
-            
-            elif (received == "resume"):
-                try:
-                    run_action(sp.start_playback)
-                    
-                    await websocket.send(get_playback_states(playing="True"))
-                except:
-                    await websocket.send("[ERROR] Error resuming playback")
-            
-            elif (received == "shuffle"):
-                try:
-                    shuffle: bool = sp.current_playback()["shuffle_state"]
-                    run_action(sp.shuffle, not shuffle)
-                    
-                    await websocket.send(get_playback_states(shuffle=str(not shuffle)))
-                except:
-                    await websocket.send("[ERROR] Error changing shuffle state")
-            
-            elif (received == "repeat"):
-                try:
-                    states: list[str] = ["track", "context", "off"]
-                    repeat: str       = sp.current_playback()["repeat_state"]
-                    change: str       = states[(states.index(repeat) + 1) if (repeat != "off") else 0]
-                    run_action(sp.repeat, change)
-
-                    await websocket.send(get_playback_states(playback=change.capitalize()))
-                except:
-                    await websocket.send("[ERROR] Error changing repeat state")
-            
-            elif (received == "playlists"):
-                SEARCH_MENU = "playlists"
-                await websocket.send(get_playlists())
-            
-            elif (received == "search"):
-                SEARCH_MENU = "search"
-                search_data: list[str] = data.removesuffix(" ").split(" ")
-                if (len(search_data) > 1):
-                    search_results = sp.search(" ".join(search_data[1:]), type=search_data[0], market="US") # Valid arguments for type: "track", "album", "album,track"
-                    if (search_data[0] == "album,track" or search_data[0] == "track,album"):
-                        tracks = search_results["tracks"]
-                        albums = search_results["albums"]
-                        await websocket.send(get_song_results(tracks, type="search") + get_song_results(albums, type="search"))
-                    else:
-                        await websocket.send(get_song_results(search_results[f"{search_data[0]}s"], type="search"))
-                
-            elif (received == "queue"):
-                try:
-                    _ = sp.queue()["queue"][0] # Throws an error if there's no queue available
-                    
-                    SEARCH_MENU = "queue"
-                    await websocket.send(get_song_results(sp.queue(), type="queue", keyword="queue"))
-                except:
-                    await websocket.send("[ERROR] No queue found")
-            
-            elif (received == "play" and data != None):
-                play_data: list[str] = data.split(" ")
-                try:
-                    if (SEARCH_MENU == "search" and play_data[0] == "track"):
-                        sp.start_playback(uris=[data]) # Plays just the searched song
-                    elif (SEARCH_MENU == "playlists"):
-                        sp.start_playback(context_uri=data) # Plays the playlist clicked on
-                    elif (play_data[0] == "album"):
-                        sp.start_playback(context_uri=" ".join(play_data[1:])) # Plays the album clicked on
-                    else:
-                        sp.start_playback(context_uri=sp.currently_playing()["context"]["uri"], offset={"uri": data}) # Plays song in the queue that was clicked on
-                except:
-                    await websocket.send("[ERROR] Error playing song")
-            
-            else:
-                await websocket.send("[ERROR] Unknown command")
-                
-    except:
-        print(current_time(), "Connection error with client.")
+    CLIENT.find_device()
 
 async def main():
+    connect_to_spotify()
     print(current_time(), "Booted up. Awaiting interaction...")
-    async with websockets.serve(socket, 'localhost', PORT):
-        await asyncio.Future()
+    
+    async with ws.serve(socket, 'localhost', PORT):
+        await aio.Future()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    aio.run(main())
