@@ -35,5 +35,5 @@ You'll need these Python packages: *websockets*, *asyncio*, *spotipy*. You'll al
 | Displaying playlist tracks & playing a specific playlist track | ✔️ Completed | v1.1 |
 | Player for only displaying currently playing song | ✔️ Completed | v1.1 |
 | Searching artists & displaying artist profile | 📝 Planned | v1.2 |
-| Song queueing system on the player | 📝 Planned | v1.2 |
-| UI overhaul for the player | 📝 Planned | v??? |
+| UI overhaul for the player | 📝 Planned | v1.2? |
+| Song queueing system on the player | 📝 Planned | v??? |
