@@ -21,7 +21,8 @@ You'll need these Python packages: *websockets*, *asyncio*, *spotipy*. You'll al
 - Download the ZIP package in the files and unzip it
 - In the IDs.txt file, paste in your Spotify application's Client ID, Secret ID, and a Redirect link you're using for your application. Also put in the callback link as the redirect URI and the port ID you'll be using for Resonite
     - The port ID should *not* be the same ID as the ID you use for the callback link (if you use http://locahost:8000/callback as your link, don't use port 8000 for the websocket)
-- Run the Python file in a terminal with `.\ResoniteSpotipy.py` or `py ResoniteSpotipy.py`, or run it through an IDE like VSCode
+- Run the `ResoniteSpotipy.exe` executable in the ZIP file
+    - If you're using an older version of the ZIP file, you can run the `ResoniteSpotipy.py` file and it'll do the same stuff
 
 ## How to setup the Resonite websocket client
 - Spawn out the item from the folder
