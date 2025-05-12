@@ -7,7 +7,7 @@ Here's the Resonite record link for the Resonite Spotipy audio player:
 
 ## Prerequisites
 You'll need these Python packages: *websockets*, *asyncio*, *spotipy*. You'll also need Python 3.9 at least.
-- To install these, run this command: ```pip install websockets asyncio spotipy```
+- To install these, run this command: ```py -m pip install websockets asyncio spotipy```
 
 ## How to setup your Spotify application
 **You'll need Spotify Premium to be able to do this!**
